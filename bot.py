@@ -2,10 +2,7 @@ import os
 import logging
 import requests
 import json
-import asyncio
-from threading import Thread
 
-from flask import Flask, request
 from fpdf import FPDF
 from docx import Document as DocxDocument
 from PyPDF2 import PdfReader
@@ -277,86 +274,37 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Desole, je ne peux lire que les fichiers PDF et Word pour le moment.")
 
-# --- Flask App and Webhook Setup ---
+# --- Main: Native webhook from python-telegram-bot ---
 
-flask_app = Flask(__name__)
-application_ptb = None
-loop = None
-
-def run_async(coro):
-    """Run an async function in the bot's event loop."""
-    asyncio.run_coroutine_threadsafe(coro, loop)
-
-@flask_app.route("/")
-def health_check():
-    return "Darrvis Bot is running!", 200
-
-@flask_app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def telegram_webhook():
-    if application_ptb is None or loop is None:
-        # Bot still initializing, retry
-        for _ in range(10):
-            import time as _time
-            _time.sleep(1)
-            if application_ptb is not None and loop is not None:
-                break
-        if application_ptb is None or loop is None:
-            return "Bot not initialized", 500
-    json_data = request.get_json(force=True)
-    update = Update.de_json(json_data, application_ptb.bot)
-    asyncio.run_coroutine_threadsafe(application_ptb.process_update(update), loop)
-    return "ok", 200
-
-async def setup_bot():
-    """Setup and start the bot."""
-    global application_ptb
-    application_ptb = Application.builder().token(TELEGRAM_TOKEN).build()
+def main():
+    """Start the bot using python-telegram-bot's native webhook server."""
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Command Handlers
-    application_ptb.add_handler(CommandHandler("start", start))
-    application_ptb.add_handler(CommandHandler("aide", aide))
-    application_ptb.add_handler(CommandHandler("reset", reset))
-    application_ptb.add_handler(CommandHandler("image", generate_image_command))
-    application_ptb.add_handler(CommandHandler("pdf", create_pdf_command))
-    application_ptb.add_handler(CommandHandler("word", create_word_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("aide", aide))
+    application.add_handler(CommandHandler("reset", reset))
+    application.add_handler(CommandHandler("image", generate_image_command))
+    application.add_handler(CommandHandler("pdf", create_pdf_command))
+    application.add_handler(CommandHandler("word", create_word_command))
 
     # Message Handlers
-    application_ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application_ptb.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    await application_ptb.initialize()
+    logger.info(f"Starting bot with webhook on port {PORT}...")
 
     if WEBHOOK_URL:
-        webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-        await application_ptb.bot.set_webhook(url=webhook_url)
-        logger.info(f"Webhook set to {webhook_url}")
-
-    await application_ptb.start()
-    logger.info("Bot started successfully!")
-
-def start_bot_loop():
-    """Start the asyncio event loop for the bot in a separate thread."""
-    global loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(setup_bot())
-        logger.info("Bot loop running forever...")
-        loop.run_forever()
-    except Exception as e:
-        logger.error(f"Error in bot loop: {e}")
-
-import time
-
-# Start the bot in a background thread
-bot_thread = Thread(target=start_bot_loop, daemon=True)
-bot_thread.start()
-
-# Wait for the bot to initialize
-time.sleep(8)
-
-# This is the WSGI app that gunicorn will use
-app = flask_app
+        # Use native webhook - no Flask, no gunicorn needed
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TELEGRAM_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}",
+        )
+    else:
+        # Fallback to polling for local development
+        application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    flask_app.run(host="0.0.0.0", port=PORT)
+    main()
