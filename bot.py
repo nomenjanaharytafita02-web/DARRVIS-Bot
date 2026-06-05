@@ -293,8 +293,15 @@ def health_check():
 
 @flask_app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def telegram_webhook():
-    if application_ptb is None:
-        return "Bot not initialized", 500
+    if application_ptb is None or loop is None:
+        # Bot still initializing, retry
+        for _ in range(10):
+            import time as _time
+            _time.sleep(1)
+            if application_ptb is not None and loop is not None:
+                break
+        if application_ptb is None or loop is None:
+            return "Bot not initialized", 500
     json_data = request.get_json(force=True)
     update = Update.de_json(json_data, application_ptb.bot)
     asyncio.run_coroutine_threadsafe(application_ptb.process_update(update), loop)
@@ -332,16 +339,21 @@ def start_bot_loop():
     global loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(setup_bot())
-    loop.run_forever()
+    try:
+        loop.run_until_complete(setup_bot())
+        logger.info("Bot loop running forever...")
+        loop.run_forever()
+    except Exception as e:
+        logger.error(f"Error in bot loop: {e}")
+
+import time
 
 # Start the bot in a background thread
 bot_thread = Thread(target=start_bot_loop, daemon=True)
 bot_thread.start()
 
-# Wait a moment for the bot to initialize
-import time
-time.sleep(3)
+# Wait for the bot to initialize
+time.sleep(8)
 
 # This is the WSGI app that gunicorn will use
 app = flask_app
