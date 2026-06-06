@@ -34,17 +34,31 @@ MAX_FREE_MESSAGES = 10
 # --- Utility Functions ---
 
 def get_gemini_response(prompt, chat_history=None):
+    import time as _time
     headers = {"Content-Type": "application/json"}
     payload = {"contents": []}
 
     if chat_history:
-        for message in chat_history:
+        for message in chat_history[-10:]:  # Limit history to last 10 messages
             payload["contents"].append({"role": message["role"], "parts": [{"text": message["text"]}]})
 
     payload["contents"].append({"role": "user", "parts": [{"text": prompt}]})
 
     params = {"key": GEMINI_API_KEY}
-    response = requests.post(GEMINI_API_URL, headers=headers, json=payload, params=params)
+    
+    # Retry up to 3 times with delay if rate limited
+    for attempt in range(3):
+        response = requests.post(GEMINI_API_URL, headers=headers, json=payload, params=params)
+        if response.status_code == 429:
+            # Rate limited, wait and retry
+            wait_time = (attempt + 1) * 10  # 10s, 20s, 30s
+            logger.warning(f"Rate limited, waiting {wait_time}s (attempt {attempt+1}/3)")
+            _time.sleep(wait_time)
+            continue
+        response.raise_for_status()
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    
+    # If all retries failed, raise the last error
     response.raise_for_status()
     return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
