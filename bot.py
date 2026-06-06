@@ -26,10 +26,28 @@ PORT = int(os.getenv("PORT", 8000))
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# In-memory storage for conversation context and message count
-user_conversations = {}
-user_message_counts = {}
+# Persistent storage for conversation context and message count
+DATA_FILE = "/tmp/darrvis_data.json"
 MAX_FREE_MESSAGES = 10
+
+def load_data():
+    """Load conversations and message counts from file."""
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("conversations", {}), data.get("counts", {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}, {}
+
+def save_data(conversations, counts):
+    """Save conversations and message counts to file."""
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump({"conversations": conversations, "counts": counts}, f)
+    except Exception as e:
+        logger.error(f"Error saving data: {e}")
+
+user_conversations, user_message_counts = load_data()
 
 # --- Utility Functions ---
 
@@ -66,9 +84,10 @@ def get_gemini_response(prompt, chat_history=None):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     user_conversations[user_id] = []
     user_message_counts[user_id] = 0
+    save_data(user_conversations, user_message_counts)
     welcome_message = (
         f"Salut ! Je suis {BOT_NAME}, votre assistant IA polyvalent.\n\n"
         "Je peux repondre a vos questions, generer des images, creer des documents PDF et Word, "
@@ -102,14 +121,15 @@ async def aide(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     user_conversations[user_id] = []
     user_message_counts[user_id] = 0
+    save_data(user_conversations, user_message_counts)
     await update.message.reply_text("Votre conversation et votre compteur de messages ont ete reinitialises.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     text = update.message.text
 
     if user_id not in user_message_counts:
@@ -130,6 +150,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         gemini_response = get_gemini_response(text, user_conversations[user_id])
         user_conversations[user_id].append({"role": "model", "text": gemini_response})
+        save_data(user_conversations, user_message_counts)
         await update.message.reply_text(gemini_response)
     except Exception as e:
         logger.error(f"Error getting Gemini response: {e}")
@@ -137,7 +158,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
 
     if user_id not in user_message_counts:
         user_message_counts[user_id] = 0
@@ -160,7 +181,7 @@ async def generate_image_command(update: Update, context: ContextTypes.DEFAULT_T
 
 async def create_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
 
     if user_id not in user_message_counts:
         user_message_counts[user_id] = 0
@@ -197,7 +218,7 @@ async def create_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def create_word_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
 
     if user_id not in user_message_counts:
         user_message_counts[user_id] = 0
@@ -234,7 +255,7 @@ async def create_word_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_chat_action(ChatAction.TYPING)
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
 
     if user_id not in user_message_counts:
         user_message_counts[user_id] = 0
