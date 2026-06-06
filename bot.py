@@ -16,7 +16,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_NAME = "Darrvis"
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 POLLINATIONS_API_URL = "https://image.pollinations.ai/prompt/"
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
